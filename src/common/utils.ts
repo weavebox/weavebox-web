@@ -9,17 +9,10 @@ export function formatDataSize(size: number) {
   return `${(size / MB).toFixed(2)}MB`;
 }
 
-export type FileMeta = {
-  filename: string;
-  offset: number;
-  size: number;
-  view?: Uint8Array;
-};
-
 export type ReadFileProgressCallback = (
   readSize: number,
   totalSize: number
-) => { aborted: boolean };
+) => void;
 
 export async function readFileAsync(
   file: File,
@@ -43,8 +36,7 @@ export async function readFileAsync(
     buffer.set(chunk, offset + rsize);
     rsize += chunk.length;
 
-    const res = cbProgress(rsize, fsize);
-    if (res.aborted) return offset + rsize;
+    cbProgress(rsize, fsize);
   }
 }
 
@@ -63,6 +55,6 @@ export function readJsonFile(inputFile: File): Promise<string> {
   });
 }
 
-export function formatMoney(amount: number, fractionDigits = 6) {
-  return amount.toFixed(fractionDigits).replace(/\d(?=(\d{3})+\.)/g, "$&,");
+export function formatMoney(amount: string) {
+  return amount.replace(/\d(?=(\d{3})+\.)/g, "$&,");
 }

@@ -1,7 +1,7 @@
 import { picasso } from "@vechain/picasso";
 import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Account } from "../common/account";
-import { ArweaveApi } from "../common/weave";
+import { arweave, ArweaveApi } from "../common/weave";
 import Login from "./Login";
 import Popup from "./Popup";
 
@@ -25,19 +25,26 @@ function Topbar(props: PropsType) {
 
   useEffect(() => {
     if (account.fake) return;
+
     let aborted = false;
     let address = account.address;
+
+    // Query account balance
     ArweaveApi.get(`wallet/${address}/balance`, {
       // override JSON.parse behaviour
       transformResponse: [(data) => data],
     }).then((resp) => {
       if (aborted) return;
-      const balance = Number(resp.data) / 1000000000000.0;
+      let balance = arweave.ar.winstonToAr(resp.data, {
+        decimals: 6,
+      });
       setAccount({ ...account, balance });
     });
+
     return () => {
       aborted = true;
     };
+    // eslint-disable-next-line
   }, [account.address]);
 
   const NavItem = ({ name }: any) => {
@@ -73,7 +80,6 @@ function Topbar(props: PropsType) {
             <NavItem name="Inbox" />
             <NavItem name="Outbox" />
             <NavItem name="Upload" />
-            <NavItem name="Send" />
           </ul>
           <div
             onClick={() => setUserPopup((s) => !s)}
@@ -99,10 +105,9 @@ function Topbar(props: PropsType) {
           <NavItem name="Inbox" />
           <NavItem name="Outbox" />
           <NavItem name="Upload" />
-          <NavItem name="Send" />
         </ul>
       </header>
-      <Popup visible={userPopup} setVisible={setUserPopup}>
+      <Popup id="userPopup" visible={userPopup} setVisible={setUserPopup}>
         <Login account={account} setAccount={setAccount} />
       </Popup>
     </>

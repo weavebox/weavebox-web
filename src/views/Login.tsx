@@ -53,11 +53,12 @@ function Login(props: PropsType) {
 
     if (address !== account.address && openFileRef.current) {
       setAccount({ address, jwk });
+      sessionStorage.setItem("keydata", json);
     }
   };
 
   const name = account.name || "Anonymous";
-  const balance = account.balance || 0;
+  const balance = account.balance || "0";
   const svg = picasso(account.address);
 
   const createMemuPop = () => (
@@ -67,6 +68,7 @@ function Login(props: PropsType) {
         className="px-2 py-2 flex items-center text-sm rounded hover:bg-gray-200"
       >
         <img
+          alt=""
           className="w-5 h-5 mr-1"
           src="https://img.icons8.com/material-outlined/2x/json.png"
         />
@@ -77,6 +79,7 @@ function Login(props: PropsType) {
         className="px-2 py-2 flex items-center text-sm rounded hover:bg-gray-200"
       >
         <img
+          alt=""
           className="w-5 h-5 mr-1"
           src="https://github.githubassets.com/images/icons/emoji/unicode/1f994.png"
         />

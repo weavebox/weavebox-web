@@ -4,7 +4,7 @@ export type Account = {
   jwk?: JsonWebKey;
   fake?: boolean;
   fakeAddress?: string;
-  balance?: number;
+  balance?: string;
 };
 
 export const FakeUser: Account = {

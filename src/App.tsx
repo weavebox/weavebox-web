@@ -2,13 +2,15 @@ import Topbar from "./views/Topbar";
 import Mybox from "./views/Mybox";
 import Upload from "./views/Upload";
 import Home from "./views/Home";
-
-import "./css/font-face.min.css";
-import "./css/style.css";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FakeUser } from "./common/account";
+import { compareChunkDataFunc } from "./common/chunks";
+import { getAweaveAccountAddress } from "./common/weave";
 
-type BoxTypes = "Mybox" | "Inbox" | "Outbox" | "Upload" | "Send";
+type BoxTypes = "Mybox" | "Inbox" | "Outbox" | "Upload";
+
+// @ts-ignore
+window.compareChunkDataFunc = compareChunkDataFunc;
 
 export default function App() {
   const [account, setAccount] = useState(FakeUser);
@@ -18,12 +20,23 @@ export default function App() {
     setBox(item);
   };
 
+  useEffect(() => {
+    let data = sessionStorage.getItem("keydata");
+    if (!data) return;
+    (async (json: string) => {
+      const jwk = JSON.parse(json) as JsonWebKey;
+      const address = await getAweaveAccountAddress(jwk);
+      if (address !== account.address) {
+        setAccount({ address, jwk });
+      }
+    })(data);
+    // eslint-disable-next-line
+  }, []);
+
   const createContent = () => {
     switch (box) {
       case "Upload":
-        return <Upload />;
-      case "Send":
-        return <Upload sendMode={true} />;
+        return <Upload account={account} />;
       case "Mybox":
       case "Inbox":
       case "Outbox":
