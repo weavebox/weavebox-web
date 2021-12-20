@@ -1,37 +1,30 @@
-import { JWKInterface } from "arweave/node/lib/wallet";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Account } from "../common/account";
-import { arweave } from "../common/weave";
+import { ManifestData, syncManifestList } from "../common/downloader";
+import ItemCard from "./ItemCard";
 
-type PropsType = {
-  account: Account;
-};
+type PropsType = { account: Account };
 
-function Mybox(props: PropsType) {
-  const [status, setStatus] = useState("");
-  const account = props.account;
+function Mybox({ account }: PropsType) {
+  let [manifestList, setManifestList] = useState<ManifestData[]>([]);
+  let { address } = account;
 
-  const send = async () => {
-    let key = account.jwk as JWKInterface;
-    let tx = await arweave.createTransaction(
-      {
-        target: "_gnukmRQqoTeNdIyCXCvHTFqw1pbj2C6eHueLkuZyrI",
-        quantity: arweave.ar.arToWinston("220"),
-      },
-      key
-    );
-    await arweave.transactions.sign(tx, key);
-    const response = await arweave.transactions.post(tx);
+  useEffect(() => {
+    if (manifestList.length > 0) {
+      setManifestList([]);
+    }
+    let ab = new AbortController();
+    syncManifestList(setManifestList, address, ab.signal);
+    return () => ab.abort();
+  }, [address]);
 
-    console.log(response.status);
-    setStatus(response.statusText);
-  };
+  console.log(address, manifestList);
 
   return (
-    <div className="flex flex-col items-start gap-2">
-      <p>{account.address}</p>
-      <p>{status}</p>
-      <button onClick={send}>Send</button>
+    <div className="w-full">
+      {manifestList.map((m) => (
+        <ItemCard key={m.id} manifest={m} account={account} />
+      ))}
     </div>
   );
 }

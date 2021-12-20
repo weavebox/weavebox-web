@@ -1,3 +1,5 @@
+import { ManifestData } from "./downloader";
+
 export type Account = {
   name?: string;
   address: string;

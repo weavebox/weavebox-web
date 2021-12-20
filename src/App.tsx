@@ -4,13 +4,9 @@ import Upload from "./views/Upload";
 import Home from "./views/Home";
 import { useEffect, useState } from "react";
 import { FakeUser } from "./common/account";
-import { compareChunkDataFunc } from "./common/chunks";
 import { getAweaveAccountAddress } from "./common/weave";
 
 type BoxTypes = "Mybox" | "Inbox" | "Outbox" | "Upload";
-
-// @ts-ignore
-window.compareChunkDataFunc = compareChunkDataFunc;
 
 export default function App() {
   const [account, setAccount] = useState(FakeUser);
@@ -24,10 +20,14 @@ export default function App() {
     let data = sessionStorage.getItem("keydata");
     if (!data) return;
     (async (json: string) => {
-      const jwk = JSON.parse(json) as JsonWebKey;
-      const address = await getAweaveAccountAddress(jwk);
-      if (address !== account.address) {
-        setAccount({ address, jwk });
+      try {
+        const jwk = JSON.parse(json) as JsonWebKey;
+        const address = await getAweaveAccountAddress(jwk);
+        if (address !== account.address) {
+          setAccount({ address, jwk });
+        }
+      } catch (err: any) {
+        // console.log(err);
       }
     })(data);
     // eslint-disable-next-line
@@ -38,11 +38,9 @@ export default function App() {
       case "Upload":
         return <Upload account={account} />;
       case "Mybox":
-      case "Inbox":
-      case "Outbox":
         return <Mybox account={account} />;
     }
-    return <Home />;
+    return <Home start={() => setBox("Mybox")} />;
   };
 
   return (

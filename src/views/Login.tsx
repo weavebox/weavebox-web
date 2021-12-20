@@ -34,6 +34,7 @@ function Login(props: PropsType) {
       fileRef.click();
     } else if (loginType === "logout") {
       setAccount(FakeUser);
+      sessionStorage.removeItem("keydata");
     }
     setMenuPopup(false);
   };

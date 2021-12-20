@@ -45,7 +45,6 @@ function Upload({ account }: PropsType) {
     setStatus("Uploader ready.");
   }
 
-  uploader.syncAccount(account);
   uploader.setConfirmPopup = setConfirmPopup;
   uploader.setResult = setResult;
   uploader.setStatus = setStatus;
@@ -73,8 +72,9 @@ function Upload({ account }: PropsType) {
     let title = titleRef.current?.value || "";
     let memo = memoRef.current?.value || "";
     let _tags = tagsRef.current?.value || "";
-    let tags = _tags.split(",").map((x) => x.trim());
-    uploader.start({ title, tags, memo });
+    let tags = _tags.split(/[\s,;]+/).map((x) => x.trim());
+    let jwk = account.jwk;
+    uploader.kickStart({ title, tags, memo, jwk });
   };
 
   const totalSize = uploader.dataSize;
@@ -84,12 +84,34 @@ function Upload({ account }: PropsType) {
     : "text-gray-500";
 
   if (!!uploadResult) {
+    const txid = uploader.tx?.id;
     return (
       <section className="w-full flex flex-col gap-4 items-start">
         <h2 className="font-bold">{uploadResult.message}</h2>
-        <p>Tx ID: {uploader.tx?.id}</p>
+        <p>Transaction ID: {txid}</p>
+        <p>Mine status:</p>
+        <a
+          className="underline hover:text-sky-800"
+          target="_blank"
+          rel="noreferrer"
+          href={`https://arweave.net/tx/${txid}`}
+        >
+          https://arweave.net/tx/{txid}
+        </a>
+        <a
+          className="underline hover:text-sky-800"
+          target="_blank"
+          rel="noreferrer"
+          href={`https://viewblock.io/arweave/tx/${txid}`}
+        >
+          https://viewblock.io/arweave/tx/{txid}
+        </a>
+        <p className="text-pink-600">
+          It takes a few minutes to mine your transaction, until then you can
+          see it in your box.
+        </p>
         <button
-          className="bg-sky-200 px-2 py-1 rounded hover:bg-sky-300"
+          className="bg-sky-200 mt-8 px-2 py-1 rounded hover:bg-sky-300"
           onClick={() => setResult(undefined)}
         >
           Back

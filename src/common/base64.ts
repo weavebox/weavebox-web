@@ -73,10 +73,7 @@ export function normalArrayBuffer(bufferSource: BufferSource) {
   if (bufferSource instanceof ArrayBuffer) {
     return bufferSource;
   }
-  if (
-    bufferSource.byteOffset === 0 &&
-    bufferSource.byteLength === bufferSource.buffer.byteLength
-  ) {
+  if (bufferSource.byteOffset === 0) {
     return bufferSource.buffer;
   }
   throw new Error("Unable to normalize partial view of ArrayBuffer");
@@ -106,6 +103,10 @@ export function b64Encode(source: BufferSource, toUrl: boolean = false) {
   if (k === 2) return b64 + "=";
 
   return b64;
+}
+
+export function b64EncodeStr(rawString: string, toUrl: boolean = false) {
+  return b64Encode(new TextEncoder().encode(rawString), toUrl);
 }
 
 const byteToHex = [] as string[];

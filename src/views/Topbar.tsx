@@ -23,35 +23,35 @@ function Topbar(props: PropsType) {
   const { box, selectBox } = props.box;
   const { account, setAccount } = props.account;
 
-  useEffect(() => {
-    if (account.fake) return;
+  // useEffect(() => {
+  //   if (account.fake) return;
 
-    let aborted = false;
-    let address = account.address;
+  //   let aborted = false;
+  //   let address = account.address;
 
-    // Query account balance
-    ArweaveApi.get(`wallet/${address}/balance`, {
-      // override JSON.parse behaviour
-      transformResponse: [(data) => data],
-    }).then((resp) => {
-      if (aborted) return;
-      let balance = arweave.ar.winstonToAr(resp.data, {
-        decimals: 6,
-      });
-      setAccount({ ...account, balance });
-    });
+  //   // Query account balance
+  //   ArweaveApi.get(`wallet/${address}/balance`, {
+  //     // override JSON.parse behaviour
+  //     transformResponse: [(data) => data],
+  //   }).then((resp) => {
+  //     if (aborted) return;
+  //     let balance = arweave.ar.winstonToAr(resp.data, {
+  //       decimals: 6,
+  //     });
+  //     setAccount({ ...account, balance });
+  //   });
 
-    return () => {
-      aborted = true;
-    };
-    // eslint-disable-next-line
-  }, [account.address]);
+  //   return () => {
+  //     aborted = true;
+  //   };
+  //   // eslint-disable-next-line
+  // }, [account.address]);
 
   const NavItem = ({ name }: any) => {
     let cn =
       "px-[6px] py-[4px] sm:px-[8px] sm:py-[4px] rounded-full hover:bg-sky-200 sm:hover:bg-sky-300 hover:text-slate-900 cursor-pointer";
     if (box === name) {
-      cn += " bg-sky-200 sm:bg-sky-300 text-slate-900";
+      cn += " bg-sky-200 sm:bg-sky-300 text-slate-800";
     }
     return (
       <li className={cn} onClick={() => selectBox(name)}>
@@ -66,7 +66,7 @@ function Topbar(props: PropsType) {
   return (
     <>
       <header className="fixed w-full md:bg-white bg-sky-50 shadow select-none z-10">
-        <div className="flex px-[8px] py-[4px] items-center max-w-screen-lg mx-auto">
+        <div className="flex px-[8px] py-[4px] items-center max-w-screen-md mx-auto">
           <div className="flex-grow flex">
             <h1
               className="text-xl text-sky-600 font-bold cursor-pointer"
