@@ -16,7 +16,7 @@ function Mybox({ account }: PropsType) {
     let ab = new AbortController();
     syncManifestList(setManifestList, address, ab.signal);
     return () => ab.abort();
-  }, [address]);
+  }, [address, manifestList.length]);
 
   // console.log(address, manifestList);
 

@@ -1,17 +1,18 @@
 import { Dispatch, SetStateAction } from "react";
 import { b64Decode } from "./base64";
 import { arweave } from "./weave";
+import { localdb } from "./localdb";
 
-export const kWbStartupBlock = 800000;
+export const kWbStartupBlock = 836600;
 export const kAdressLength = 43;
 
 export type ManifestData = {
   id: string;
   size: number;
   offset: number;
-  chunk: string;
-  height: string;
-  timestamp: string;
+  timestamp: number;
+  height: number;
+  chunk: Uint8Array;
 };
 
 const queryTemplate = `
@@ -44,10 +45,6 @@ export function lastSyncHeightCacheKey(address: string) {
   return `wb-${address}-lastSyncHeight`;
 }
 
-export function manifestListCacheKey(address: string) {
-  return `wb-${address}-manifestList`;
-}
-
 // Those data should be cached in the localStorage
 export async function syncManifestList(
   setter: Dispatch<SetStateAction<ManifestData[]>>,
@@ -58,13 +55,14 @@ export async function syncManifestList(
     throw new Error("Invalid address: " + address);
   }
 
-  let result = [] as ManifestData[];
-  let cached = localStorage.getItem(manifestListCacheKey(address));
+  let cached = await localdb
+    .table("artifacts")
+    .where("address")
+    .equals(address)
+    .toArray();
 
-  if (!!cached) {
-    result = JSON.parse(cached) as ManifestData[];
-    if (result.length > 0) setter(result);
-  }
+  cached = cached.sort((m1, m2) => m2.timestamp - m1.timestamp);
+  if (cached.length > 0) setter(cached);
 
   let t0 = performance.now();
   let fromHeight = kWbStartupBlock;
@@ -85,8 +83,7 @@ export async function syncManifestList(
       //  so always search back 10 blocks.
       fromHeight = Number(lastSyncHeight) - 10;
     }
-
-    console.log(`cache for ${address}`, lastSyncHeight, result);
+    // console.log(`cache for ${address}`, lastSyncHeight, cached);
   } catch (err) {
     console.error(`Fail to load cache for ${address}`);
   }
@@ -94,12 +91,13 @@ export async function syncManifestList(
   if (fromHeight >= toHeight) {
     // cache latest height
     localStorage.setItem(lastSyncHeightCacheKey(address), `${toHeight}`);
+    console.log("skipping tx refresh");
     return;
   }
 
   try {
     let cursor = "";
-    let txids = [] as any;
+    let txids = [] as { id: string; timestamp: number; height: number }[];
 
     do {
       let query = queryTemplate
@@ -117,8 +115,8 @@ export async function syncManifestList(
       if (edges && edges.length > 0) {
         let ids = edges.map((e: any) => ({
           id: e.node.id,
-          timestamp: e.node.block?.timestamp,
-          height: e.node.block?.height,
+          timestamp: Number(e.node.block?.timestamp),
+          height: Number(e.node.block?.height),
         }));
         txids = txids.concat(ids);
       }
@@ -128,12 +126,14 @@ export async function syncManifestList(
         : null;
     } while (!!cursor);
 
-    const len = txids.length;
+    let len = txids.length;
+    let result: ManifestData[] = [];
+
     for (let i = 0; i < len; ++i) {
-      let { id, timestamp, height } = txids[len - i - 1];
+      let { id, timestamp, height } = txids[i];
 
       // Already cached item
-      if (result.filter((r) => r.id === id).length > 0) {
+      if (cached.filter((r) => r.id === id).length > 0) {
         console.log("skip cached tx: " + id);
         continue;
       }
@@ -142,21 +142,42 @@ export async function syncManifestList(
         data: { offset, size },
       } = await arweave.api.get(`tx/${id}/offset`);
 
-      if (abSignal.aborted) return [];
+      size = +size;
 
+      if (abSignal.aborted) return [];
       if (size < 512) throw new Error(`Fail to query tx id: ${id}`);
 
       offset = offset - size + 1;
 
       let res = await arweave.api.get(`chunk/${offset}`);
-      let chunk = res.data.chunk as string;
-      let cdata = b64Decode(chunk);
+      let chunk = b64Decode(res.data.chunk as string);
 
-      offset += cdata.length;
-      console.log(`read: ${cdata.length}/${size}, next read: ${offset}`);
+      // console.log(offset, size, chunk);
 
-      result.unshift({ id, offset, size, chunk, timestamp, height });
-      setter([...result]);
+      offset += chunk.length;
+      // console.log(`read: ${chunk.length}/${size}, next read: ${offset}`);
+
+      // Add one chunk more
+      if (chunk.length < size) {
+        res = await arweave.api.get(`chunk/${offset}`);
+        let chunk2 = b64Decode(res.data.chunk as string);
+        offset += chunk2.length;
+
+        // console.log(offset, size, chunk2);
+
+        let chunk1 = chunk;
+        chunk = new Uint8Array(chunk1.length + chunk2.length);
+        chunk.set(chunk1);
+        chunk.set(chunk2, chunk1.length);
+      }
+
+      result.push({ id, offset, size, chunk, timestamp, height });
+
+      await localdb
+        .table("artifacts")
+        .put({ id, address, timestamp, offset, size, height, chunk });
+
+      setter(result.concat(cached));
     }
 
     let t1 = performance.now();
@@ -166,8 +187,12 @@ export async function syncManifestList(
     );
 
     localStorage.setItem(lastSyncHeightCacheKey(address), `${toHeight}`);
-    localStorage.setItem(manifestListCacheKey(address), JSON.stringify(result));
+
+    if (result.length > 0) {
+      result = result.concat(cached);
+      // console.log("final result: ", result);
+    }
   } catch (err) {
-    console.error(`network error`);
+    console.error(`network error ${err}`);
   }
 }

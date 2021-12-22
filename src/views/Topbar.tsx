@@ -1,7 +1,6 @@
 import { picasso } from "@vechain/picasso";
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useState } from "react";
 import { Account } from "../common/account";
-import { arweave, ArweaveApi } from "../common/weave";
 import Login from "./Login";
 import Popup from "./Popup";
 

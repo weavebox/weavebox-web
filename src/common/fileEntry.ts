@@ -6,6 +6,7 @@ export class FileEntry {
   offset: number = 0;
   handle?: FileSystemHandle;
   file?: File;
+  view?: Uint8Array;
   entries?: FileEntry[];
   aesKey?: CryptoKey;
   iv?: Uint8Array;
@@ -68,26 +69,25 @@ export class FileEntry {
     return [this.name, this.size];
   }
 
-  public static fromIndexArray(indexes: any[]): FileEntry {
-    let rootEntry = FileEntry.makeDirEntry();
+  public importIndexArray(indexes: any[]) {
     let [name, size, entries] = indexes;
 
     if (!entries) {
       throw new Error("FileEntry: loadIndexArray: broken root index");
     }
 
-    rootEntry.name = name;
+    this.entries = [];
+
+    this.name = name;
     entries?.forEach((sub: any[]) => {
-      let entry = FileEntry.fromIndex(sub, rootEntry.offset + rootEntry.size);
-      rootEntry.size += entry.size;
-      rootEntry.entries?.push(entry);
+      let entry = FileEntry.fromIndex(sub, this.offset + this.size);
+      this.size += entry.size;
+      this.entries?.push(entry);
     });
 
-    if (rootEntry.size !== size) {
+    if (this.size !== size) {
       throw new Error("inconsistent size");
     }
-
-    return rootEntry;
   }
 
   private static fromIndex(index: any[], offset: number): FileEntry {

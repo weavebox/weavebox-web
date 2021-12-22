@@ -2,19 +2,15 @@ import { TransactionUploader } from "arweave/node/lib/transaction-uploader";
 import Transaction from "arweave/web/lib/transaction";
 import { Dispatch, SetStateAction } from "react";
 import { Account } from "./account";
-import { WbItem } from "./wbitem";
-import { readFileAsync } from "./utils";
 import { arweave, getPublicKey } from "./weave";
 import Artifact from "./artifact";
 import { aesEncrypt, rsaEncrypt } from "./crypto";
-import { msgPack, msgUnpack } from "./msgpack";
+import { msgPack } from "./msgpack";
 import { JWKInterface } from "arweave/web/lib/wallet";
 
 const aesKeyGenParams = { name: "AES-GCM", length: 256 };
-const kRsaInBlockSize = 446;
 const kRsaOutBlockSize = 512;
 const kAesIvSize = 12;
-const kAesKeySize = 32;
 const kFormatVer1 = 1;
 
 function _T(t1: number, t2: number) {
@@ -99,7 +95,8 @@ class Uploader {
       "decrypt",
     ]);
 
-    let packedRootIndex = msgPack(rootIndex);
+    let { title, tags, memo } = artifact;
+    let packedRootIndex = msgPack([title, tags, memo, rootIndex]);
     let encryptedRootIndex = await aesEncrypt(packedRootIndex, aesKey, aesSalt);
     let indexSize = encryptedRootIndex.length;
 
@@ -108,6 +105,7 @@ class Uploader {
       kFormatVer1,
       new Uint8Array(aesRawKey),
       aesSalt,
+      indexSize,
     ]);
     let encryptedBootData = await rsaEncrypt(packedBootData, rsaPublicKey);
     let bootSize = encryptedBootData.length;

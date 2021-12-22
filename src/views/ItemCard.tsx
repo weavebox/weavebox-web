@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Account } from "../common/account";
-import { b64Decode } from "../common/base64";
 import { ManifestData } from "../common/downloader";
 import { inferTypes } from "../common/ftypes";
-import { WbFile, WbItem } from "../common/wbitem";
 import { getPrivateKey } from "../common/weave";
+import Artifact from "../common/artifact";
+import FileEntry from "../common/fileEntry";
 
 const vbTxUrl = "https://viewblock.io/arweave/tx/";
 
@@ -13,29 +13,29 @@ type PropsType = {
   account: Account;
 };
 
-function formatTime(timestamp: string) {
-  let htime = Date.now() / 1000 - Number(timestamp);
+function formatTime(timestamp: number) {
+  let htime = Date.now() / 1000 - timestamp;
   if (htime < 3600) return `${Math.floor(htime / 60)} minutes ago`;
   if (htime < 3600 * 24) return `${Math.floor(htime / 3600)} hours ago`;
   if (htime < 3600 * 24 * 10)
     return `${Math.floor(htime / 3600 / 24)} days ago`;
 
-  let date = new Date(1000 * Number(timestamp));
+  let date = new Date(1000 * timestamp);
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
 const textDecoder = new TextDecoder();
 
 function ItemCard({ manifest, account }: PropsType) {
-  let [tick, setTick] = useState(0);
+  let [, setTick] = useState(0);
   let [show, setShow] = useState(false);
+  let [file, setFile] = useState<FileEntry>();
   let [showCopied, setShowCopied] = useState(false);
-  let [file, setFile] = useState<WbFile>();
-  let { id, timestamp, chunk } = manifest;
-  let { current: item } = useRef(new WbItem());
+  let { id, timestamp } = manifest;
+  let { current: artifact } = useRef<Artifact>(new Artifact());
 
   useEffect(() => {
-    // setFile(undefined);
+    setFile(undefined);
   }, [show]);
 
   useEffect(() => {
@@ -51,24 +51,24 @@ function ItemCard({ manifest, account }: PropsType) {
 
     (async (abSignal) => {
       try {
-        let data = b64Decode(chunk);
         let key = await getPrivateKey(account.jwk!);
-        item.manifest = manifest;
-        await item.decryptManifest(data, key);
+        await artifact.parseLeadingChunkData(manifest, key);
         if (abSignal.aborted) return;
         setTick((x) => x + 1);
       } catch (err) {
         // console.error("error");
-        item.title = "~unable to decrypt this tx~";
+        artifact.title = "~unable to decrypt this tx~";
         setTick((x) => x + 1);
       }
     })(ab.signal);
+
     return () => ab.abort();
+    // eslint-disable-next-line
   }, []);
 
-  let cn = (n: WbFile) => (n === file ? "!bg-sky-300" : "");
+  let cn = (n: FileEntry) => (n === file ? "!bg-sky-300" : "");
 
-  const onClickFile = (sfile: WbFile) => {
+  const onClickFile = (sfile: FileEntry) => {
     setFile(file === sfile ? undefined : sfile);
   };
 
@@ -78,6 +78,7 @@ function ItemCard({ manifest, account }: PropsType) {
 
   const onSaveContent = () => {
     if (!file || !file.view) return;
+
     let { media } = inferTypes(file.name);
     let blob = new Blob([file.view], { type: media });
     let url = window.URL.createObjectURL(blob);
@@ -94,20 +95,28 @@ function ItemCard({ manifest, account }: PropsType) {
   };
 
   const downloadData = () => {
-    item.downloadData(setTick);
+    artifact.loadRemainChunks(setTick);
     setTick((x) => x + 1);
   };
 
   let content = undefined as any;
 
+  if (file && !file.view && artifact.data) {
+    file.view = artifact.data.subarray(file.offset, file.offset + file.size);
+  }
+
   if (!!file?.view) {
-    let { type, media } = inferTypes(file.name);
+    let { type } = inferTypes(file.name);
     if (type === "text") {
       content = textDecoder.decode(file.view);
     }
   }
 
-  function buildContentView(file: WbFile) {
+  function buildContentView(file: FileEntry) {
+    if (artifact.data) {
+      file.view = artifact.data.subarray(file.offset, file.offset + file.size);
+    }
+
     if (!!file.view) {
       let { type, media } = inferTypes(file.name);
 
@@ -133,10 +142,10 @@ function ItemCard({ manifest, account }: PropsType) {
       );
     }
 
-    if (item.downloading) {
+    if (artifact.loading) {
       return (
         <div className="flex flex-col h-[120px] gap-4 items-center justify-center">
-          <p>Downloading...{item.downloadingPct.toFixed(0)}%</p>
+          <p>Downloading...{artifact.loadingPct.toFixed(0)}%</p>
         </div>
       );
     }
@@ -154,13 +163,15 @@ function ItemCard({ manifest, account }: PropsType) {
     );
   }
 
+  let fileEntries = artifact.rootEntry.entries ?? [];
+
   return (
     <div className="flex flex-col gap-1 border-solid border-[1px] border-gray-200 items-start my-4 p-2 shadow-sm bg-white rounded hover:bg-white hover:shadow">
       <p
         onClick={() => setShow((x) => !x)}
         className="select-none text-sky-600 text-lg cursor-pointer"
       >
-        {item.title}{" "}
+        {artifact.title}{" "}
         <span className="text-xs text-gray-600">{formatTime(timestamp)}</span>
       </p>
       <a
@@ -174,7 +185,7 @@ function ItemCard({ manifest, account }: PropsType) {
       {show ? (
         <div className="w-full">
           <ul className="select-none flex flex-wrap gap-2">
-            {item.files.map((f, i) => (
+            {fileEntries.map((f, i) => (
               <li
                 key={i}
                 onClick={() => onClickFile(f)}
