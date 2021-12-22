@@ -18,10 +18,10 @@ function Mybox({ account }: PropsType) {
     return () => ab.abort();
   }, [address]);
 
-  console.log(address, manifestList);
+  // console.log(address, manifestList);
 
   return (
-    <div className="w-full">
+    <div className="w-full px-[4px]">
       {manifestList.map((m) => (
         <ItemCard key={m.id} manifest={m} account={account} />
       ))}

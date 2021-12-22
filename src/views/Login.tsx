@@ -98,9 +98,14 @@ function Login(props: PropsType) {
           className="rounded-full w-[64px] h-[64px] cursor-pointer"
         />
         <p className="pt-4 text-xl font-bold text-gray-900">{name}</p>
-        <code className="text-xs text-gray-800 select-all hover:underline hover:decoration-sky-500 cursor-pointer">
+        <a
+          href={`https://viewblock.io/arweave/address/${account.address}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-gray-800 select-none hover:underline hover:decoration-sky-500 cursor-pointer"
+        >
           {account.address}
-        </code>
+        </a>
         <p className="text-black">{`Balance: ${formatMoney(balance)}AR`}</p>
         <div className="flex gap-4">
           {!account.fake ? (

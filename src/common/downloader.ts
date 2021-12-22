@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction } from "react";
+import { b64Decode } from "./base64";
 import { arweave } from "./weave";
 
 export const kWbStartupBlock = 800000;
@@ -149,6 +150,10 @@ export async function syncManifestList(
 
       let res = await arweave.api.get(`chunk/${offset}`);
       let chunk = res.data.chunk as string;
+      let cdata = b64Decode(chunk);
+
+      offset += cdata.length;
+      console.log(`read: ${cdata.length}/${size}, next read: ${offset}`);
 
       result.unshift({ id, offset, size, chunk, timestamp, height });
       setter([...result]);

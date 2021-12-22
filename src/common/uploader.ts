@@ -4,7 +4,18 @@ import { Dispatch, SetStateAction } from "react";
 import { Account } from "./account";
 import { WbItem } from "./wbitem";
 import { readFileAsync } from "./utils";
-import { arweave, getPrivateKey, getPublicKey } from "./weave";
+import { arweave, getPublicKey } from "./weave";
+import Artifact from "./artifact";
+import { aesEncrypt, rsaEncrypt } from "./crypto";
+import { msgPack, msgUnpack } from "./msgpack";
+import { JWKInterface } from "arweave/web/lib/wallet";
+
+const aesKeyGenParams = { name: "AES-GCM", length: 256 };
+const kRsaInBlockSize = 446;
+const kRsaOutBlockSize = 512;
+const kAesIvSize = 12;
+const kAesKeySize = 32;
+const kFormatVer1 = 1;
 
 function _T(t1: number, t2: number) {
   return (t1 - t2).toFixed(0);
@@ -20,22 +31,15 @@ class Uploader {
   abortSignal: AbortSignal;
   abortController: AbortController;
   txUploader?: TransactionUploader;
-  dataSize: number;
-  rsaKey?: CryptoKey;
   tx?: Transaction;
-  files: File[];
-  item: WbItem;
 
   setConfirmPopup!: Dispatch<SetStateAction<boolean>>;
   setStatus!: Dispatch<SetStateAction<string>>;
   setResult!: Dispatch<SetStateAction<UploadResult | undefined>>;
 
   constructor() {
-    this.dataSize = 0;
-    this.files = [];
     this.abortController = new AbortController();
     this.abortSignal = this.abortController.signal;
-    this.item = new WbItem();
   }
 
   syncSendMode(sendMode: any) {
@@ -53,67 +57,31 @@ class Uploader {
     }
   }
 
-  setFiles(files: File[]) {
-    this.dataSize = files.reduce((p, n) => p + n.size, 0);
-    this.files = files;
-  }
-
-  hasFiles = () => this.dataSize > 0;
-
-  async kickStart({ title, tags, memo, jwk }: any) {
-    Object.assign(this.item, { title, tags, memo });
+  async kickStart(artifact: Artifact, jwk: JWKInterface) {
     try {
-      await this.prepareTransaction(jwk);
-    } catch (e) {
-      let err = e as Error;
+      if (!artifact || artifact.rootEntry.size <= 0) {
+        throw new Error("Uploader: no selected files!");
+      }
+      if (!jwk) throw new Error("Uploader: invalid account!");
+      await this.prepareTransaction(artifact, jwk);
+    } catch (err: any) {
       this.setStatus(`[Error] ${err.message}`);
     }
   }
 
-  async prepareTransaction(jwk: any) {
+  async prepareTransaction(artifact: Artifact, jwk: any) {
     let setStatus = this.setStatus;
-
-    if (!this.files || this.files.length < 1) {
-      throw new Error("Uploader: no selected files!");
-    }
-
-    if (!jwk) {
-      throw new Error("Uploader: invalid account!");
-    }
-
     let t0 = performance.now();
     let t1 = performance.now();
     let t2 = performance.now();
 
-    let offset = 0;
-    let contents = new Uint8Array(this.dataSize);
-
-    // Read and concat files
-    for (let i = 0; i < this.files.length; ++i) {
-      const file = this.files[i];
-      const beginOffset = offset;
-
-      offset = await readFileAsync(
-        file,
-        contents,
-        beginOffset,
-        (rsize, fsize) => {
-          this.checkAborted();
-          setStatus(
-            `[${((rsize * 100) / fsize).toFixed(0)}%] Reading file ${file.name}`
-          );
-        }
-      );
-
-      this.item.files.push({
-        name: file.name,
-        offset: beginOffset,
-        size: file.size,
-        view: contents.subarray(beginOffset, offset),
-      });
-
-      this.checkAborted();
-    }
+    let [rootIndex, contents] = await artifact.buildTransactionData(
+      this.abortSignal,
+      (msg, pct) => {
+        this.checkAborted();
+        setStatus(`${msg} ${pct}%`);
+      }
+    );
 
     t2 = performance.now();
     this.checkAborted();
@@ -123,8 +91,44 @@ class Uploader {
 
     // Encrypt data
     t1 = performance.now();
-    let rsaKey = await getPublicKey(jwk);
-    let data = await this.item.encryptData(this.files, contents, rsaKey);
+
+    let rsaPublicKey = await getPublicKey(jwk);
+    let aesSalt = crypto.getRandomValues(new Uint8Array(kAesIvSize));
+    let aesKey = await crypto.subtle.generateKey(aesKeyGenParams, true, [
+      "encrypt",
+      "decrypt",
+    ]);
+
+    let packedRootIndex = msgPack(rootIndex);
+    let encryptedRootIndex = await aesEncrypt(packedRootIndex, aesKey, aesSalt);
+    let indexSize = encryptedRootIndex.length;
+
+    let aesRawKey = await crypto.subtle.exportKey("raw", aesKey);
+    let packedBootData = msgPack([
+      kFormatVer1,
+      new Uint8Array(aesRawKey),
+      aesSalt,
+    ]);
+    let encryptedBootData = await rsaEncrypt(packedBootData, rsaPublicKey);
+    let bootSize = encryptedBootData.length;
+
+    let encryptedContents = await aesEncrypt(contents, aesKey, aesSalt);
+    let contentSize = encryptedContents.length;
+
+    if (bootSize !== kRsaOutBlockSize) {
+      throw new Error("unknown error, rsa encrypted size !== 512");
+    }
+
+    // console.log(JSON.stringify(rootIndex));
+    // console.log(packedBootData, packedRootIndex);
+    // console.log(msgUnpack(packedBootData), msgUnpack(packedRootIndex));
+    console.log("encrypted size: ", bootSize, indexSize, contentSize);
+
+    let data = new Uint8Array(bootSize + indexSize + contentSize);
+
+    data.set(encryptedBootData, 0);
+    data.set(encryptedRootIndex, bootSize);
+    data.set(encryptedContents, bootSize + indexSize);
 
     t2 = performance.now();
     this.checkAborted();
@@ -132,18 +136,10 @@ class Uploader {
       `Encrypt time: ${_T(t2, t1)}ms, total ellapsed time: ${_T(t2, t0)}ms`
     );
 
-    {
-      let testItem = new WbItem();
-      let rsaKey = await getPrivateKey(jwk);
-      await testItem.decryptManifest(data, rsaKey);
-      console.log(testItem);
-    }
-
     // Create and sign transaction
     t1 = performance.now();
     let tx = await arweave.createTransaction({ data }, jwk);
     tx.addTag("app", "weavebox");
-    tx.addTag("ver", "1");
 
     t2 = performance.now();
     this.checkAborted();

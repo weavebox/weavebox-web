@@ -1,5 +1,7 @@
+import { JWKInterface } from "arweave/node/lib/wallet";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { Account } from "../common/account";
+import Artifact from "../common/artifact";
 import Uploader, { UploadResult } from "../common/uploader";
 import { formatDataSize, MaxDataSize } from "../common/utils";
 import Confirm from "./Confirm";
@@ -18,8 +20,8 @@ function Upload({ account }: PropsType) {
   const uploaderRef = useRef<Uploader>();
 
   const [uploadResult, setResult] = useState<UploadResult>();
+  const [artifact, setArtifact] = useState<Artifact>();
   const [status, setStatus] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
   const [confirmPopup, setConfirmPopup] = useState(false);
 
   useEffect(() => {
@@ -53,9 +55,9 @@ function Upload({ account }: PropsType) {
     const files = evt.target?.files;
     if (!files || files.length < 1) return;
 
-    uploader.setFiles(Array.from(files));
-    setFiles(uploader.files);
-    setStatus(`Selected file size: ${formatDataSize(uploader.dataSize)}`);
+    let artifact = new Artifact();
+    artifact.setRootFiles(Array.from(files));
+    setArtifact(artifact);
 
     if (!!titleRef.current) {
       titleRef.current.value = files[0].name;
@@ -69,15 +71,49 @@ function Upload({ account }: PropsType) {
   };
 
   const onUploadClick = () => {
-    let title = titleRef.current?.value || "";
-    let memo = memoRef.current?.value || "";
-    let _tags = tagsRef.current?.value || "";
-    let tags = _tags.split(/[\s,;]+/).map((x) => x.trim());
-    let jwk = account.jwk;
-    uploader.kickStart({ title, tags, memo, jwk });
+    if (!artifact || artifact.rootEntry.size <= 0) {
+      setStatus("Error: artifact not prepared");
+      return;
+    }
+
+    artifact.title = titleRef.current?.value || "";
+    artifact.memo = memoRef.current?.value || "";
+
+    let tagsText = tagsRef.current?.value || "";
+    artifact.tags = tagsText.split(/[\s,;]+/).map((x) => x.trim());
+
+    uploader.kickStart(artifact, account.jwk as JWKInterface);
   };
 
-  const totalSize = uploader.dataSize;
+  const onSelectFiles = async () => {
+    if (!window.showOpenFilePicker) {
+      selRef.current?.click();
+      return;
+    }
+    const hs = await window.showOpenFilePicker({ multiple: true });
+    let files = [] as File[];
+    for (let i = 0; i < hs.length; ++i) {
+      files.push(await hs[i].getFile());
+    }
+    const artifact = new Artifact();
+    artifact.setRootFiles(files);
+    setArtifact(artifact);
+    if (!!titleRef.current) {
+      titleRef.current.value = files[0].name;
+    }
+  };
+
+  const onSelectFolder = async () => {
+    const dirHandle = await window.showDirectoryPicker();
+    if (titleRef.current) {
+      titleRef.current.value = dirHandle.name;
+    }
+    const artifact = new Artifact();
+    await artifact.setRootHandle(dirHandle);
+    setArtifact(artifact);
+  };
+
+  const totalSize = artifact?.rootEntry.size ?? 0;
   const sizeColor = totalSize > MaxDataSize ? "text-red-500" : "text-gray-500";
   const statusColor = status.match(/Error|have cancelled/i)
     ? "text-red-500"
@@ -120,21 +156,31 @@ function Upload({ account }: PropsType) {
     );
   }
 
+  let files = artifact?.listFiles() ?? [];
+
   return (
     <section className="w-full">
       <h2 className="font-bold">Upload or send your files</h2>
 
-      <div className="mt-2 flex items-end w-full">
-        <p>Files</p>
+      <div className="mt-2 flex gap-1 items-end w-full">
+        <p className="md:flex-1">Files</p>
         <div className={`flex-1 text-sm text-center ${sizeColor}`}>
           <p>{`Total file size: ${formatDataSize(totalSize)}`}</p>
         </div>
-        <button
-          onClick={() => selRef.current?.click()}
-          className="rounded bg-sky-200 text-sky-600 hover:bg-sky-600 hover:text-white px-2 py-1 disabled:hover:bg-sky-200 disabled:text-gray-400"
-        >
-          Select files
-        </button>
+        <div className="md:flex-1 flex gap-2 justify-end">
+          <button
+            onClick={onSelectFolder}
+            className="rounded bg-sky-200 text-sky-600 hover:bg-sky-600 hover:text-white px-2 py-1 disabled:hover:bg-sky-200 disabled:text-gray-400"
+          >
+            Select folder
+          </button>
+          <button
+            onClick={onSelectFiles}
+            className="rounded bg-sky-200 text-sky-600 hover:bg-sky-600 hover:text-white px-2 py-1 disabled:hover:bg-sky-200 disabled:text-gray-400"
+          >
+            Select files
+          </button>
+        </div>
         <input
           ref={selRef}
           onChange={onFilesSelected}
@@ -148,10 +194,10 @@ function Upload({ account }: PropsType) {
         <ul className="p-[2px] text-sm">
           {files.map((file) => (
             <li
-              key={file.name}
+              key={file.path}
               className="m-[1px] px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 select-none"
-              onClick={() => onFileItemClick(file.name)}
-            >{`${file.name} | ${formatDataSize(file.size)}`}</li>
+              onClick={() => onFileItemClick(file.path)}
+            >{`${file.path} | ${formatDataSize(file.size)}`}</li>
           ))}
         </ul>
       </div>

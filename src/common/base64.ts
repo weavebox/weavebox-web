@@ -122,19 +122,25 @@ export function hexViewOf(bufferSource: BufferSource) {
 }
 
 // Read uint8 value at byteOffset of bufferSource
-export function uint8Read(bufferSource: BufferSource, byteOffset: number) {
-  let buf = normalArrayBuffer(bufferSource);
-  return new Uint8Array(buf, byteOffset, 1)[0];
+export function uint8Read(arrayBuffer: Uint8Array, byteOffset: number) {
+  return new Uint8Array(
+    arrayBuffer.buffer,
+    arrayBuffer.byteOffset + byteOffset,
+    1
+  )[0];
 }
 
 // Write uint8 value into bufferSource at byteOffset
 export function uint8Write(
   value: number,
-  bufferSource: BufferSource,
+  arrayBuffer: Uint8Array,
   byteOffset: number
 ) {
-  let buf = normalArrayBuffer(bufferSource);
-  new Uint8Array(buf, byteOffset, 1)[0] = value;
+  new Uint8Array(
+    arrayBuffer.buffer,
+    arrayBuffer.byteOffset + byteOffset,
+    1
+  )[0] = value;
 }
 
 // Read uint16 value at byteOffset of bufferSource
@@ -154,25 +160,34 @@ export function uint16Write(
 }
 
 // Read uint32 value at byteOffset of bufferSource
-export function uint32Read(bufferSource: BufferSource, byteOffset: number) {
-  let buf = normalArrayBuffer(bufferSource);
-  return new Uint32Array(buf, byteOffset, 1)[0];
+export function uint32Read(arrayBuffer: Uint8Array, byteOffset: number) {
+  return new Uint32Array(
+    arrayBuffer.buffer,
+    arrayBuffer.byteOffset + byteOffset,
+    1
+  )[0];
 }
 
 // Write uint32 value into bufferSource at byteOffset
 export function uint32Write(
   value: number,
-  bufferSource: BufferSource,
+  arrayBuffer: Uint8Array,
   byteOffset: number
 ) {
-  let buf = normalArrayBuffer(bufferSource);
-  new Uint32Array(buf, byteOffset, 1)[0] = value;
+  new Uint32Array(
+    arrayBuffer.buffer,
+    arrayBuffer.byteOffset + byteOffset,
+    1
+  )[0] = value;
 }
 
 // Read int8 value at byteOffset of bufferSource
-export function int8Read(bufferSource: BufferSource, byteOffset: number) {
-  let buf = normalArrayBuffer(bufferSource);
-  return new Int8Array(buf, byteOffset, 1)[0];
+export function int8Read(arrayBuffer: Uint8Array, byteOffset: number) {
+  return new Int8Array(
+    arrayBuffer.buffer,
+    arrayBuffer.byteOffset + byteOffset,
+    1
+  )[0];
 }
 
 // Write int8 value into bufferSource at byteOffset

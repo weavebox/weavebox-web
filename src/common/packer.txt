@@ -1,0 +1,145 @@
+import { pack, unpack } from "msgpackr";
+import { b64Decode, b64Encode, uint32Read, uint32Write } from "./base64";
+import { aesDecrypt, aesEncrypt, rsaDecrypt, rsaEncrypt } from "./crypto";
+import { FileEntry, FilePlainObject } from "./files";
+
+const aesKeyGenParams = { name: "AES-GCM", length: 256 };
+const kRsaInBlockSize = 446;
+const kRsaOutBlockSize = 512;
+const kAesIvSize = 12;
+const kAesKeySize = 32;
+
+export async function packFileEntry(
+  rootEntry: FileEntry,
+  rsaPublicKey: CryptoKey,
+  signal: AbortSignal
+) {
+  let { isdir, offset } = rootEntry.plainObject;
+  if (!isdir || offset !== 0) {
+    throw new Error("packFileEntry: must be root entry");
+  }
+
+  let fpo = JSON.stringify(rootEntry.plainObject);
+  let iv = crypto.getRandomValues(new Uint8Array(kAesIvSize));
+  let aesKey = await crypto.subtle.generateKey(aesKeyGenParams, true, [
+    "encrypt",
+    "decrypt",
+  ]);
+
+  let _rawKey = await crypto.subtle.exportKey("raw", aesKey);
+  let rawKey = new Uint8Array(_rawKey);
+
+  let keyData = pack({
+    iv: b64Encode(iv),
+    key: b64Encode(rawKey),
+  }) as Uint8Array;
+
+  let fpoData = pack({ fpo }) as Uint8Array;
+
+  console.log("pack", iv, rawKey, fpo);
+
+  let buffer = new Uint8Array(keyData.length + fpoData.length);
+
+  buffer.set(keyData);
+  buffer.set(fpoData, keyData.length);
+
+  let rsaEncrypted = await rsaEncrypt(
+    buffer.subarray(0, kRsaInBlockSize),
+    rsaPublicKey
+  );
+  let aesEncrypted = new Uint8Array(0);
+
+  if (buffer.length > kRsaInBlockSize) {
+    aesEncrypted = await aesEncrypt(
+      buffer.subarray(kRsaInBlockSize),
+      aesKey,
+      iv
+    );
+  }
+
+  let data = await rootEntry.loadData(signal);
+  let datEncrypted = await aesEncrypt(data, aesKey, iv);
+
+  buffer = new Uint8Array(
+    8 + rsaEncrypted.length + aesEncrypted.length + datEncrypted.length
+  );
+
+  let pos = 0;
+  buffer.set(rsaEncrypted, 0);
+  pos += rsaEncrypted.length;
+
+  if (pos !== kRsaOutBlockSize) {
+    // must be 512 bytes
+    throw new Error("inconsistent size");
+  }
+
+  // We need the size info since it's not fixed.
+  uint32Write(keyData.length, buffer, pos);
+  pos += 4;
+
+  uint32Write(aesEncrypted.length, buffer, pos);
+  pos += 4;
+
+  if (aesEncrypted.length > 0) {
+    buffer.set(aesEncrypted, pos);
+    pos += aesEncrypted.length;
+  }
+
+  buffer.set(datEncrypted, pos);
+
+  return buffer;
+}
+
+export async function unpackFileEntry(
+  data: Uint8Array,
+  rsaPrivateKey: CryptoKey
+): Promise<FileEntry> {
+  let rsaData = data.subarray(0, kRsaOutBlockSize);
+  let remainData = data.subarray(kRsaOutBlockSize);
+  let keyDataSize = uint32Read(remainData, 0);
+  let aesDataSize = uint32Read(remainData, 4);
+
+  let decrypted = await rsaDecrypt(rsaData, rsaPrivateKey);
+  let keyData = decrypted.subarray(0, keyDataSize);
+  let fpoData = decrypted.subarray(keyDataSize);
+
+  let keyObject = unpack(keyData);
+  if (!keyObject.key || !keyObject.iv) {
+    throw new Error("key data not found");
+  }
+
+  let iv = b64Decode(keyObject.iv);
+  let rawKey = b64Decode(keyObject.key);
+
+  if (iv.length !== kAesIvSize || rawKey.length !== kAesKeySize) {
+    throw new Error("inconsistent key/iv size");
+  }
+
+  let aesKey = await crypto.subtle.importKey(
+    "raw",
+    rawKey,
+    aesKeyGenParams,
+    false,
+    ["decrypt"]
+  );
+
+  if (aesDataSize) {
+    let aesData = remainData.subarray(0, aesDataSize);
+    let moreFpo = await aesDecrypt(aesData, aesKey, iv);
+    let temp = new Uint8Array(fpoData.length + moreFpo.length);
+    temp.set(fpoData, 0);
+    temp.set(moreFpo, fpoData.length);
+    fpoData = temp;
+  }
+
+  let { fpo } = unpack(fpoData);
+  let rootObject = JSON.parse(fpo);
+  let rootEntry = new FileEntry(rootObject);
+
+  rootEntry.aesKey = aesKey;
+  rootEntry.iv = iv;
+
+  console.log("unpack", iv, rawKey, fpo);
+
+  return rootEntry;
+}

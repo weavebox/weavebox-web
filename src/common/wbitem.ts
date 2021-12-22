@@ -1,7 +1,8 @@
 import { pack, unpack } from "msgpackr";
-import { uint16Read, uint16Write } from "./base64";
+import { b64Decode, uint16Read, uint16Write } from "./base64";
 import { aesDecrypt, aesEncrypt, rsaDecrypt, rsaEncrypt } from "./crypto";
 import { ManifestData } from "./downloader";
+import { arweave } from "./weave";
 
 const aesKeyGenParams = { name: "AES-GCM", length: 256 };
 const kRsaInBlockSize = 446;
@@ -26,6 +27,9 @@ export class WbItem {
   aesKey?: CryptoKey;
   rawBuffer?: Uint8Array;
   manifest?: ManifestData;
+  downloading?: boolean;
+  downloadingPct: number = 0;
+  moreDataSize: number = 0;
 
   async encryptData(fileList: File[], contents: Uint8Array, rsaKey: CryptoKey) {
     if (!fileList) throw new Error("encrypt data: no input file list");
@@ -146,13 +150,14 @@ export class WbItem {
     let manifestSize = twoBytes + encryptedManifestLength;
 
     this.rawBuffer = ibuf.subarray(manifestSize);
+    this.moreDataSize = dataSize - ibuf.length;
 
-    console.log(manifestSize, dataSize, ibuf.length);
+    // console.log(manifestSize, dataSize, ibuf.length);
 
-    if (dataSize < ibuf.length) {
+    if (this.moreDataSize < 0) {
       console.error("This should be an parse error!");
       throw new Error("Inconsistent");
-    } else if (dataSize > ibuf.length) {
+    } else if (this.moreDataSize > 0) {
       // Has more chunks of data to be downloaded,
       //  delay until user need it.
       console.log("more chunk data needed");
@@ -169,5 +174,58 @@ export class WbItem {
       this.files.push({ name, size, offset, view });
       offset += size;
     }
+  }
+
+  async downloadData(setTick: any) {
+    if (this.downloading) return;
+    this.downloading = true;
+
+    if (!this.manifest) {
+      throw new Error("manifest data not exists yet!");
+    }
+
+    if (!this.rawBuffer || !this.aesKey || !this.iv) {
+      throw new Error("?? error!");
+    }
+
+    let { offset } = this.manifest;
+    let rpos = this.rawBuffer.length;
+
+    let buffer = new Uint8Array(rpos + this.moreDataSize);
+    buffer.set(this.rawBuffer);
+
+    let rsize = 0;
+    while (rsize < this.moreDataSize) {
+      let res = await arweave.api.get(`chunk/${offset}`);
+      let chunk = res.data.chunk as string;
+      let data = b64Decode(chunk);
+
+      if (rsize > this.moreDataSize) {
+        throw new Error("Inconsistent data size");
+      }
+
+      buffer.set(data, rpos + rsize);
+      offset += data.length;
+      rsize += data.length;
+
+      this.downloadingPct = (rsize * 100) / this.moreDataSize;
+      setTick((x: any) => x + 1);
+    }
+
+    if (rsize !== this.moreDataSize) {
+      throw new Error("Inconsistent data size");
+    }
+
+    this.rawBuffer = buffer;
+    this.data = await aesDecrypt(this.rawBuffer, this.aesKey, this.iv);
+
+    for (let i = 0; i < this.files.length; ++i) {
+      let file = this.files[i];
+      let { offset, size } = file;
+      file.view = new Uint8Array(this.data.buffer, offset, size);
+    }
+
+    this.downloading = false;
+    setTick((x: any) => x + 1);
   }
 }
