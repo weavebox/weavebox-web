@@ -2,11 +2,10 @@ import { TransactionUploader } from "arweave/node/lib/transaction-uploader";
 import Transaction from "arweave/web/lib/transaction";
 import { Dispatch, SetStateAction } from "react";
 import { Account } from "./account";
-import { arweave, getPublicKey } from "./weave";
+import { arweave, getPublicKey, getSessionKey } from "./weave";
 import Artifact from "./artifact";
 import { aesEncrypt, rsaEncrypt } from "./crypto";
 import { msgPack } from "./msgpack";
-import { JWKInterface } from "arweave/web/lib/wallet";
 
 const aesKeyGenParams = { name: "AES-GCM", length: 256 };
 const kRsaOutBlockSize = 512;
@@ -53,19 +52,18 @@ class Uploader {
     }
   }
 
-  async kickStart(artifact: Artifact, jwk: JWKInterface) {
+  async kickStart(artifact: Artifact, account: Account) {
     try {
       if (!artifact || artifact.rootEntry.size <= 0) {
         throw new Error("Uploader: no selected files!");
       }
-      if (!jwk) throw new Error("Uploader: invalid account!");
-      await this.prepareTransaction(artifact, jwk);
+      await this.prepareTransaction(artifact, account);
     } catch (err: any) {
       this.setStatus(`[Error] ${err.message}`);
     }
   }
 
-  async prepareTransaction(artifact: Artifact, jwk: any) {
+  async prepareTransaction(artifact: Artifact, account: Account) {
     let setStatus = this.setStatus;
     let t0 = performance.now();
     let t1 = performance.now();
@@ -88,7 +86,11 @@ class Uploader {
     // Encrypt data
     t1 = performance.now();
 
-    let rsaPublicKey = await getPublicKey(jwk);
+    let rsaPublicKey = await getPublicKey(account);
+    if (!rsaPublicKey) {
+      throw new Error("Account public key error.");
+    }
+
     let aesSalt = crypto.getRandomValues(new Uint8Array(kAesIvSize));
     let aesKey = await crypto.subtle.generateKey(aesKeyGenParams, true, [
       "encrypt",
@@ -133,6 +135,9 @@ class Uploader {
     setStatus(
       `Encrypt time: ${_T(t2, t1)}ms, total ellapsed time: ${_T(t2, t0)}ms`
     );
+
+    let jwk = getSessionKey(account) as any;
+    if (!jwk) throw new Error("Session key error.");
 
     // Create and sign transaction
     t1 = performance.now();

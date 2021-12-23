@@ -6,6 +6,7 @@ const imageTypes = {
   tiff: "image/tiff",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
+  ico: "image/vnd.microsoft.icon",
 } as { [key: string]: string };
 
 export default imageTypes;

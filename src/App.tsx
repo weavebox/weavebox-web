@@ -4,33 +4,26 @@ import Upload from "./views/Upload";
 import Home from "./views/Home";
 import { useEffect, useState } from "react";
 import { FakeUser } from "./common/account";
-import { getAweaveAccountAddress } from "./common/weave";
+import { invalidateAweaveAddress } from "./common/weave";
+import { loadSessionData } from "./common/crypto";
+import { msgUnpack } from "./common/msgpack";
+import { b64Decode } from "./common/base64";
 
 type BoxTypes = "Mybox" | "Inbox" | "Outbox" | "Upload";
 
 export default function App() {
   const [account, setAccount] = useState(FakeUser);
   const [box, setBox] = useState<BoxTypes | undefined>("Mybox");
-
-  const selectBox = (item: any) => {
-    setBox(item);
-  };
+  const selectBox = (item: any) => setBox(item);
 
   useEffect(() => {
-    let data = sessionStorage.getItem("keydata");
-    if (!data) return;
-    (async (json: string) => {
-      try {
-        const jwk = JSON.parse(json) as JsonWebKey;
-        const address = await getAweaveAccountAddress(jwk);
-        if (address !== account.address) {
-          setAccount({ address, jwk });
-        }
-      } catch (err: any) {
-        // console.log(err);
-      }
-    })(data);
-    // eslint-disable-next-line
+    let sessionData = loadSessionData();
+    if (sessionData && sessionData.length) {
+      let decoded = b64Decode(sessionData);
+      let [[address]] = msgUnpack(decoded);
+      invalidateAweaveAddress(address);
+      setAccount({ address });
+    }
   }, []);
 
   const createContent = () => {

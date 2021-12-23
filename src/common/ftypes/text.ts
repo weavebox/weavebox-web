@@ -1,4 +1,5 @@
 const textTyps = {
+  txt: "text/plain",
   json: "application/json",
   xml: "text/xml",
   html: "text/html",
@@ -19,6 +20,7 @@ const textTyps = {
   rust: "text/plain",
   py: "text/plain",
   dart: "text/plain",
+  md: "text/plain",
 } as { [key: string]: string };
 
 export default textTyps;

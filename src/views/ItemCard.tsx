@@ -5,6 +5,7 @@ import { inferTypes } from "../common/ftypes";
 import { getPrivateKey } from "../common/weave";
 import Artifact from "../common/artifact";
 import FileEntry from "../common/fileEntry";
+import { formatDataSize } from "../common/utils";
 
 const vbTxUrl = "https://viewblock.io/arweave/tx/";
 
@@ -30,6 +31,7 @@ function ItemCard({ manifest, account }: PropsType) {
   let [, setTick] = useState(0);
   let [show, setShow] = useState(false);
   let [file, setFile] = useState<FileEntry>();
+  let [dirStack, setDirStack] = useState<FileEntry[]>([]);
   let [showCopied, setShowCopied] = useState(false);
   let { id, timestamp } = manifest;
   let { current: artifact } = useRef<Artifact>(new Artifact());
@@ -47,17 +49,14 @@ function ItemCard({ manifest, account }: PropsType) {
 
   useEffect(() => {
     let ab = new AbortController();
-    if (!account.jwk) return;
-
     (async (abSignal) => {
       try {
-        let key = await getPrivateKey(account.jwk!);
-        await artifact.parseLeadingChunkData(manifest, key);
+        await artifact.parseLeadingChunkData(manifest, account);
         if (abSignal.aborted) return;
         setTick((x) => x + 1);
       } catch (err) {
         // console.error("error");
-        artifact.title = "~unable to decrypt this tx~";
+        artifact.title = "`failed to decrypt`";
         setTick((x) => x + 1);
       }
     })(ab.signal);
@@ -70,6 +69,15 @@ function ItemCard({ manifest, account }: PropsType) {
 
   const onClickFile = (sfile: FileEntry) => {
     setFile(file === sfile ? undefined : sfile);
+  };
+
+  const onClickDir = (sdir: FileEntry) => {
+    setFile(undefined);
+    setDirStack((x) => [...x, sdir]);
+  };
+
+  const onClickUpDir = () => {
+    setDirStack((x) => x.slice(0, -1));
   };
 
   const onCopyContent = (text?: string) => {
@@ -123,13 +131,17 @@ function ItemCard({ manifest, account }: PropsType) {
       if (type === "image") {
         let blob = new Blob([file.view], { type: media });
         let imgUrl = URL.createObjectURL(blob);
-        return <img src={imgUrl} alt="" className="w-full" />;
+        return (
+          <div className="flex justify-center m-1">
+            <img src={imgUrl} alt="" className="max-w-full" />
+          </div>
+        );
       }
 
       if (type === "text") {
         let content = textDecoder.decode(file.view);
         return (
-          <pre className="text-xs text-sky-700 p-2 h-[320px] overflow-y-auto">
+          <pre className="text-xs text-sky-700 p-2 max-h-[320px] overflow-y-auto">
             {content}
           </pre>
         );
@@ -163,28 +175,59 @@ function ItemCard({ manifest, account }: PropsType) {
     );
   }
 
-  let fileEntries = artifact.rootEntry.entries ?? [];
+  let cdir = dirStack.slice(-1)[0] ?? artifact.rootEntry;
+  let subt = cdir.entries ?? [];
+  let updir = dirStack.reduce((s, d) => `${s}${d.name}/`, "");
+  let dirEntries = subt.filter((a) => a.isDir);
+  let fileEntries = subt.filter((a) => !a.isDir);
 
   return (
     <div className="flex flex-col gap-1 border-solid border-[1px] border-gray-200 items-start my-4 p-2 shadow-sm bg-white rounded hover:bg-white hover:shadow">
       <p
         onClick={() => setShow((x) => !x)}
-        className="select-none text-sky-600 text-lg cursor-pointer"
+        className={
+          "select-none text-sky-600 text-lg cursor-pointer" +
+          (!artifact.decrypted ? " !text-red-600" : "")
+        }
       >
         {artifact.title}{" "}
-        <span className="text-xs text-gray-600">{formatTime(timestamp)}</span>
+        <span className="text-xs text-gray-500 px-1">
+          {formatTime(timestamp)}
+        </span>
+        <span className="text-xs text-gray-500 px-1">
+          {formatDataSize(artifact.rootEntry.size)}
+        </span>
       </p>
       <a
         target="_blank"
         rel="noreferrer"
         href={`${vbTxUrl}${id}`}
-        className="text-xs text-gray-400 cursor-pointer hover:underline select-none"
+        className="text-xs text-gray-400 break-all cursor-pointer hover:underline select-none"
       >
         {id}
       </a>
+
       {show ? (
         <div className="w-full">
+          <p className="text-sm mb-2 break-all">{artifact.memo}</p>
           <ul className="select-none flex flex-wrap gap-2">
+            {updir ? (
+              <li
+                className={`px-[4px] bg-slate-200 text-sm hover:text-sky-800 rounded cursor-pointer`}
+                onClick={() => onClickUpDir()}
+              >
+                ↑{updir}
+              </li>
+            ) : null}
+            {dirEntries.map((d, i) => (
+              <li
+                key={i}
+                onClick={() => onClickDir(d)}
+                className={`px-[4px] bg-slate-200 text-sm hover:text-sky-800 rounded cursor-pointer`}
+              >
+                {d.name}/
+              </li>
+            ))}
             {fileEntries.map((f, i) => (
               <li
                 key={i}

@@ -1,10 +1,14 @@
 import { b64Decode, b64Encode } from "./base64";
 import { decodeFromUtf8, encodeToUtf8 } from "./utf8";
 import Arweave from "arweave";
-import { JWKInterface } from "arweave/web/lib/wallet";
 import Transaction from "arweave/web/lib/transaction";
+import { Account } from "./account";
+import { aesDecrypt, aesKeyGenParams, loadSessionData } from "./crypto";
+import { msgUnpack } from "./msgpack";
+import { JWKInterface } from "arweave/node/lib/wallet";
 
 const subtleCrypto = window.crypto.subtle;
+const kAddressSize = 43;
 
 export async function generateArweaveAccountFast(): Promise<{
   jwk: JsonWebKey;
@@ -43,6 +47,11 @@ export async function generateArweaveAccountFast(): Promise<{
   return { jwk, addr };
 }
 
+export function invalidateAweaveAddress(address: string) {
+  if (address.length === kAddressSize) return;
+  throw new Error("invalid address: " + address);
+}
+
 export async function getAweaveAccountAddress(jwk: JsonWebKey) {
   let n = b64Decode(jwk.n!);
   let a = await subtleCrypto.digest("SHA-256", n);
@@ -59,20 +68,44 @@ export async function importAweaveAccount(jwk: JsonWebKey): Promise<CryptoKey> {
   );
 }
 
-export function TestBase64AndUtf8Utils(msg: (m: string) => void): boolean {
-  let str: string = "hello，你好";
-  let u8: Uint8Array = encodeToUtf8(str);
-  let b64: string = b64Encode(u8);
-  let _u8: Uint8Array = b64Decode(b64);
-  let _str: string = decodeFromUtf8(_u8);
-  let ok1 = str === _str;
-  let ok2 = b64 === "aGVsbG/vvIzkvaDlpb0=";
-  msg(`Origin string: ${str}, Decode string: ${_str}, ${ok1 ? "OK" : "BAD"}`);
-  msg(`Encoded UTF8: ${u8}, Encoded base64: ${b64}, ${ok2 ? "OK" : "BAD"}`);
-  return ok1 && ok2;
+export async function getSessionKey(
+  account: Account
+): Promise<JWKInterface | undefined> {
+  let sessionData = loadSessionData();
+  if (!sessionData || !sessionData.length) {
+    return undefined;
+  }
+
+  let [unpacked] = msgUnpack(b64Decode(sessionData));
+  let [address, sessionRawKey, sessionSalt, encryptedKey] = unpacked;
+  if (account.address !== address) return undefined;
+
+  let sessionKey = await crypto.subtle.importKey(
+    "raw",
+    sessionRawKey,
+    aesKeyGenParams,
+    false,
+    ["decrypt"]
+  );
+
+  let decryptedData = await aesDecrypt(
+    encryptedKey,
+    sessionKey,
+    sessionSalt,
+    account.address
+  );
+
+  let textDecoder = new TextDecoder();
+  let jwkJson = textDecoder.decode(decryptedData);
+
+  return JSON.parse(jwkJson);
 }
 
-export async function getPublicKey(jwk: JWKInterface | JsonWebKey) {
+export async function getPublicKey(
+  account: Account
+): Promise<CryptoKey | undefined> {
+  let jwk = await getSessionKey(account);
+  if (!jwk) return undefined;
   return await crypto.subtle.importKey(
     "jwk",
     {
@@ -91,7 +124,11 @@ export async function getPublicKey(jwk: JWKInterface | JsonWebKey) {
   );
 }
 
-export async function getPrivateKey(jwk: JWKInterface | JsonWebKey) {
+export async function getPrivateKey(
+  account: Account
+): Promise<CryptoKey | undefined> {
+  let jwk = await getSessionKey(account);
+  if (!jwk) return undefined;
   return await crypto.subtle.importKey(
     "jwk",
     {

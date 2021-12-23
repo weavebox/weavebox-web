@@ -1,10 +1,11 @@
 import { Dispatch, SetStateAction } from "react";
+import { Account } from "./account";
 import { b64Decode } from "./base64";
 import { aesDecrypt, rsaDecrypt } from "./crypto";
 import { ManifestData } from "./downloader";
 import FileEntry, { ReadProgressReporter } from "./fileEntry";
 import { msgUnpack } from "./msgpack";
-import { arweave } from "./weave";
+import { arweave, getPrivateKey } from "./weave";
 
 const aesKeyGenParams = { name: "AES-GCM", length: 256 };
 const kRsaInBlockSize = 446;
@@ -14,10 +15,11 @@ const kAesKeySize = 32;
 const kFormatVer1 = 1;
 
 class Artifact {
+  rootEntry: FileEntry;
   title: string = "";
   tags: string[] = [];
   memo: string = "";
-  rootEntry: FileEntry;
+  decrypted?: boolean;
   data?: Uint8Array;
 
   constructor(rootEntry?: FileEntry) {
@@ -46,17 +48,13 @@ class Artifact {
     }
   }
 
-  public listFiles() {
-    return this.rootEntry.listFiles("", true);
-  }
-
   public async buildTransactionData(
     signal?: AbortSignal,
     readProgress?: ReadProgressReporter
   ): Promise<[any, Uint8Array]> {
     signal ??= new AbortController().signal;
     readProgress ??= () => {};
-    let indexes = this.rootEntry.buildIndexArray();
+    let indexes = this.rootEntry.buildIndexArray(0);
     let contents = await this.rootEntry.loadData(signal, readProgress);
     return [indexes, contents];
   }
@@ -68,13 +66,16 @@ class Artifact {
   aesKey?: CryptoKey;
   aesSalt?: Uint8Array;
 
-  async parseLeadingChunkData(manifest: ManifestData, key: CryptoKey) {
+  async parseLeadingChunkData(manifest: ManifestData, account: Account) {
     this.manifest = manifest;
+
+    let privateKey = await getPrivateKey(account);
+    if (!privateKey) throw new Error("Key error");
 
     let { size, chunk } = manifest;
     let boot0 = chunk.subarray(0, kRsaOutBlockSize);
 
-    let bootData = await rsaDecrypt(boot0, key);
+    let bootData = await rsaDecrypt(boot0, privateKey);
     let [[format, aesRawKey, aesSalt, indexSize], size0] = msgUnpack(bootData);
 
     if (format !== kFormatVer1) throw new Error("wrong format: " + format);
@@ -111,6 +112,8 @@ class Artifact {
       let data = chunk.subarray(kRsaOutBlockSize + indexSize, size);
       this.data = await aesDecrypt(data, aesKey, aesSalt);
     }
+
+    this.decrypted = true;
   }
 
   async loadRemainChunks(setTick: Dispatch<SetStateAction<number>>) {

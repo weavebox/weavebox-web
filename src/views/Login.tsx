@@ -8,8 +8,16 @@ import {
   useState,
 } from "react";
 import { Account, FakeUser } from "../common/account";
+import { b64Encode } from "../common/base64";
+import { aesEncrypt, kAesIvSize, saveSessionData } from "../common/crypto";
+import { msgPack } from "../common/msgpack";
 import { formatMoney, readJsonFile } from "../common/utils";
-import { getAweaveAccountAddress } from "../common/weave";
+import {
+  getAweaveAccountAddress,
+  invalidateAweaveAddress,
+} from "../common/weave";
+
+const aesKeyGenParams = { name: "AES-GCM", length: 256 };
 
 type LoginType = "keyfile" | "arconnect" | "logout";
 
@@ -52,9 +60,26 @@ function Login(props: PropsType) {
     const jwk = JSON.parse(json) as JsonWebKey;
     const address = await getAweaveAccountAddress(jwk);
 
+    invalidateAweaveAddress(address);
+
+    // Protect session crypto key
+    const sessionSalt = crypto.getRandomValues(new Uint8Array(kAesIvSize));
+    const sessionKey = await crypto.subtle.generateKey(aesKeyGenParams, true, [
+      "encrypt",
+      "decrypt",
+    ]);
+    const sessionRawKey = await crypto.subtle.exportKey("raw", sessionKey);
+    const encryptedKey = await aesEncrypt(
+      new TextEncoder().encode(json),
+      sessionKey,
+      sessionSalt,
+      address
+    );
     if (address !== account.address && openFileRef.current) {
-      setAccount({ address, jwk });
-      sessionStorage.setItem("keydata", json);
+      const rawKey = new Uint8Array(sessionRawKey);
+      const data = msgPack([address, rawKey, sessionSalt, encryptedKey]);
+      saveSessionData(b64Encode(data));
+      setAccount({ address });
     }
   };
 

@@ -1,9 +1,6 @@
-import { ManifestData } from "./downloader";
-
 export type Account = {
   name?: string;
   address: string;
-  jwk?: JsonWebKey;
   fake?: boolean;
   fakeAddress?: string;
   balance?: string;

@@ -16,9 +16,8 @@ function Mybox({ account }: PropsType) {
     let ab = new AbortController();
     syncManifestList(setManifestList, address, ab.signal);
     return () => ab.abort();
-  }, [address, manifestList.length]);
-
-  // console.log(address, manifestList);
+    // eslint-disable-next-line
+  }, [address]);
 
   return (
     <div className="w-full px-[4px]">

@@ -7,9 +7,7 @@ import { formatDataSize, MaxDataSize } from "../common/utils";
 import Confirm from "./Confirm";
 import Popup from "./Popup";
 
-type PropsType = {
-  account: Account;
-};
+type PropsType = { account: Account };
 
 function Upload({ account }: PropsType) {
   const selRef = useRef<HTMLInputElement>(null);
@@ -19,6 +17,7 @@ function Upload({ account }: PropsType) {
   const memoRef = useRef<HTMLTextAreaElement>(null);
   const uploaderRef = useRef<Uploader>();
 
+  const [, setTick] = useState(0);
   const [uploadResult, setResult] = useState<UploadResult>();
   const [artifact, setArtifact] = useState<Artifact>();
   const [status, setStatus] = useState("");
@@ -70,6 +69,13 @@ function Upload({ account }: PropsType) {
     }
   };
 
+  const onFileItemRemove = (file: any) => {
+    file.entry.ignore = true;
+    // Rebuild index to correct the sizes
+    artifact?.rootEntry.buildIndexArray(0);
+    setTick((x) => x + 1);
+  };
+
   const onUploadClick = () => {
     if (!artifact || artifact.rootEntry.size <= 0) {
       setStatus("Error: artifact not prepared");
@@ -82,7 +88,7 @@ function Upload({ account }: PropsType) {
     let tagsText = tagsRef.current?.value || "";
     artifact.tags = tagsText.split(/[\s,;]+/).map((x) => x.trim());
 
-    uploader.kickStart(artifact, account.jwk as JWKInterface);
+    uploader.kickStart(artifact, account);
   };
 
   const onSelectFiles = async () => {
@@ -156,7 +162,7 @@ function Upload({ account }: PropsType) {
     );
   }
 
-  let files = artifact?.listFiles() ?? [];
+  let files = artifact?.rootEntry.listEntryPath("", false) ?? [];
 
   return (
     <section className="w-full">
@@ -167,7 +173,7 @@ function Upload({ account }: PropsType) {
         <div className={`flex-1 text-sm text-center ${sizeColor}`}>
           <p>{`Total file size: ${formatDataSize(totalSize)}`}</p>
         </div>
-        <div className="md:flex-1 flex gap-2 justify-end">
+        <div className="md:flex-1 flex gap-2 justify-end text-sm">
           <button
             onClick={onSelectFolder}
             className="rounded bg-sky-200 text-sky-600 hover:bg-sky-600 hover:text-white px-2 py-1 disabled:hover:bg-sky-200 disabled:text-gray-400"
@@ -191,13 +197,25 @@ function Upload({ account }: PropsType) {
       </div>
 
       <div className="mt-1 rounded bg-gray-100 w-full h-[199px] overflow-y-auto">
-        <ul className="p-[2px] text-sm">
+        <ul className="p-[2px] text-sm w-full">
           {files.map((file) => (
             <li
               key={file.path}
-              className="m-[1px] px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 select-none"
-              onClick={() => onFileItemClick(file.path)}
-            >{`${file.path} | ${formatDataSize(file.size)}`}</li>
+              className="flex m-[1px] px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 select-none group"
+            >
+              <button onClick={() => onFileItemClick(file.path)}>
+                {file.path}
+              </button>
+              <span className="flex-1 pr-4 text-right">
+                {formatDataSize(file.size)}
+              </span>
+              <button
+                className="text-red-900 hover:text-red-600 font-bold px-1 py-0 invisible group-hover:visible"
+                onClick={() => onFileItemRemove(file)}
+              >
+                x
+              </button>
+            </li>
           ))}
         </ul>
       </div>

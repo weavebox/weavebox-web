@@ -9,6 +9,7 @@ export class FileEntry {
   view?: Uint8Array;
   entries?: FileEntry[];
   aesKey?: CryptoKey;
+  ignore?: boolean;
   iv?: Uint8Array;
 
   public static makeFileEntry(file?: File) {
@@ -35,38 +36,52 @@ export class FileEntry {
     return this.offset + this.size;
   }
 
-  public listFiles(path: string, skipDirEntry: boolean) {
-    let arr: { path: string; size: number }[] = [];
-    if (!this.entries) return [];
+  public listEntryPath(path: string, skipDirEntry: boolean) {
+    let arr: { entry: FileEntry; path: string; size: number }[] = [];
+    let len = this.entries?.length ?? 0;
 
-    let thisPath = this.name ? `${this.name}/` : "";
+    for (let i = 0; i < len; ++i) {
+      let e = this.entries![i];
+      if (e.ignore) continue;
 
-    if (path) {
-      thisPath = path + thisPath;
-      if (!skipDirEntry) arr.push({ path: thisPath, size: this.size });
-    }
-
-    this.entries.forEach((e) => {
       if (e.isDir) {
-        arr.push(...e.listFiles(thisPath, skipDirEntry));
-      } else {
-        arr.push({ path: `${thisPath}${e.name}`, size: e.size });
+        let epath = `${path}${e.name}/`;
+        if (!skipDirEntry) {
+          arr.push({ entry: e, path: epath, size: e.size });
+        }
+        arr.push(...e.listEntryPath(epath, skipDirEntry));
+        continue;
       }
-    });
+
+      let epath = `${path}${e.name}`;
+      arr.push({ entry: e, path: epath, size: e.size });
+    }
 
     return arr;
   }
 
-  public buildIndexArray(): any[] {
-    if (!!this.entries) {
-      return [
-        this.name,
-        this.size,
-        Array.from(this.entries, (e) => e.buildIndexArray()),
-      ];
+  public buildIndexArray(offset: number): any[] {
+    this.offset = offset;
+
+    if (!this.entries) return [this.name, this.size];
+
+    let result = [];
+    let size = 0;
+    let len = this.entries.length;
+
+    for (let i = 0; i < len; ++i) {
+      let ent = this.entries[i];
+      if (ent.ignore) {
+        ent.offset = offset + size;
+        continue;
+      }
+      let res = ent.buildIndexArray(offset + size);
+      size += res[1];
+      result.push(res);
     }
 
-    return [this.name, this.size];
+    this.size = size;
+    return [this.name, this.size, ...result];
   }
 
   public importIndexArray(indexes: any[]) {
@@ -98,7 +113,8 @@ export class FileEntry {
       dirEntry.name = name;
       dirEntry.offset = offset;
       entries.forEach((sub: any[]) => {
-        let child = FileEntry.fromIndex(sub, offset + size);
+        let childOffset = offset + dirEntry.size;
+        let child = FileEntry.fromIndex(sub, childOffset);
         dirEntry.size += child.size;
         dirEntry.entries?.push(child);
       });
@@ -178,7 +194,9 @@ export class FileEntry {
     let rsize = 0;
 
     for (let i = 0; i < len; ++i) {
-      rsize += await this.entries![i].readData("", buf, signal, readProgress);
+      let ent = this.entries![i];
+      if (ent.ignore) continue;
+      rsize += await ent.readData("", buf, signal, readProgress);
     }
 
     if (rsize !== this.size) {
@@ -198,6 +216,7 @@ export class FileEntry {
       let len = this.entries!.length;
       let rsize = 0;
       for (let i = 0; i < len; ++i) {
+        if (this.entries![i].ignore) continue;
         rsize += await this.entries![i].readData(
           `${path}${this.name}/`,
           buf,
